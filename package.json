@@ -3,8 +3,13 @@
   "private": true,
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*", "apps/*"],
-  "engines": { "node": ">=20" },
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "typecheck": "tsc -b --pretty false",
     "test": "vitest run",
@@ -13,7 +18,11 @@
     "dev": "npm run build && wrangler dev",
     "deploy": "npm run build && wrangler deploy",
     "db:local": "wrangler d1 migrations apply game_ai_player --local",
-    "db:remote": "wrangler d1 migrations apply game_ai_player --remote"
+    "db:remote": "wrangler d1 migrations apply game_ai_player --remote",
+    "smoke": "node scripts/smoke/seed-test-player.mjs && node scripts/smoke/http.mjs",
+    "smoke:ai": "node scripts/smoke/ai.mjs",
+    "smoke:ui": "node scripts/smoke/ui.mjs",
+    "mock:openrouter": "node scripts/smoke/mock-openrouter.mjs"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "^4.20250204.0",

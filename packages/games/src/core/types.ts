@@ -52,6 +52,11 @@ export interface GameUi {
   buttons?: { label: string; move: Move }[];
   /** 格子边长的 CSS 尺寸提示 */
   cellSize?: number;
+  /**
+   * 自动推进的间隔（毫秒）。贪吃蛇这类游戏会按固定节奏走子，
+   * 玩家只负责改方向。服务端据此跳过「操作节奏过于均匀」的反作弊判定。
+   */
+  autoTickMs?: number;
 }
 
 export interface GameMeta {

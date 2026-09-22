@@ -1,0 +1,58 @@
+name = "game-ai-player"
+main = "apps/worker/src/index.ts"
+compatibility_date = "2025-01-15"
+compatibility_flags = ["nodejs_compat"]
+workers_dev = true
+
+[assets]
+directory = "apps/web/public"
+binding = "ASSETS"
+# 默认行为正是我们要的：静态资源先命中（/assets/* 直接走 CDN，不经过 Worker），
+# 没命中的路径才交给 Worker 渲染动态页
+
+
+[[d1_databases]]
+binding = "DB"
+database_name = "game_ai_player"
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "db/migrations"
+
+[[kv_namespaces]]
+binding = "KV"
+id = "0000000000000000000000000000000000"
+
+[[r2_buckets]]
+binding = "R2"
+bucket_name = "game-ai-player"
+
+[[queues.producers]]
+binding = "FINISH_QUEUE"
+queue = "match-finish"
+
+[[queues.consumers]]
+queue = "match-finish"
+max_batch_size = 25
+max_batch_timeout = 5
+max_retries = 5
+dead_letter_queue = "match-finish-dlq"
+
+[[durable_objects.bindings]]
+name = "AI_RUN"
+class_name = "AiRunDO"
+
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["AiRunDO"]
+
+[triggers]
+crons = ["*/5 * * * *", "17 3 * * *"]
+
+[vars]
+SITE_URL = "http://localhost:8787"
+SITE_NAME = "Game AI Player"
+GOOGLE_CLIENT_ID = ""
+# 全站每日 AI 预算（美元），超过后暂停新任务
+DAILY_BUDGET_USD = "5"
+# 每个用户每日可发起的 AI 录制次数
+USER_DAILY_RUNS = "10"
+# OPENROUTER_API_KEY / SESSION_SECRET 用 wrangler secret put 设置

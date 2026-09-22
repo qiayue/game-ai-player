@@ -176,5 +176,6 @@ export const snake: GameDefinition<number> = {
     },
     swipe: true,
     cellSize: 28,
+    autoTickMs: 220,
   },
 };

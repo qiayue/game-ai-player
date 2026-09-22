@@ -30,12 +30,16 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `POST` | `/api/matches` | `{ gameId }` → `{ matchId, seed, startedAt }`。服务端记录开局时间 |
-| `POST` | `/api/matches/{id}/finish` | `{ moves[], stepMs[], durationMs, finalHash }` → 服务端 replay 校验 → 入库 → `{ score, rank, replayUrl }` |
-| `POST` | `/api/matches/{id}/abandon` | 主动放弃，不上榜 |
-| `POST` | `/api/matches/claim` | 登录后认领匿名期间的对局（批量） |
+| `POST` | `/api/matches` | `{ gameId }` → `{ matchId, seed, startedAt, stepwise, state, legalMoves, ticket }`。**不写数据库** |
+| `POST` | `/api/matches/{id}/step` | 仅信息不完全的游戏：`{ ticket, moves[] }` → 服务端从 seed 重放 → `{ state, legalMoves, terminal }`。无状态 |
+| `POST` | `/api/matches/{id}/finish` | `{ ticket, moves[], stepMs[], durationMs, finalHash }` → replay 校验 → 入库 → `{ score, rank, personalBest, replayUrl, flagged }` |
+| `POST` | `/api/matches/claim` | 登录后批量认领匿名期间打完的对局 |
+
+`ticket` 是开局时下发的签名 JWT，装着 `{ matchId, gameId, seed, startedAt }`，
+有效期 12 小时。因此开局零写入，半途放弃的对局不留痕迹。
 
 `finish` 是幂等的：同一 matchId 重复提交返回首次结果，不重复计分。
+未登录时 `finish` 会算出成绩但不落库，前端把票据存进 localStorage，登录后走 `/claim` 补记。
 
 ### AI 录制
 
@@ -53,7 +57,7 @@
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/replays/{matchId}` | `{ gameId, seed, moves[], meta }`，走 R2 + Cache API，`immutable` |
+| `GET` | `/api/replays/{matchId}` | `{ gameId, seed, moves[], meta }`，走 R2，`immutable` |
 | `GET` | `/api/replays/{matchId}/ai/{ply}` | 该步的 prompt / 回复 / 推理 / 用量 |
 
 ### 排行榜与列表

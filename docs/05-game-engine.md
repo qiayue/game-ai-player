@@ -9,18 +9,19 @@
 
 /** 状态永远是「定长数值数组 + 少量标量」，这样才能序列化、哈希、喂给模型 */
 export interface GameState {
-  /** 主棋盘：一维展开（idx = r * cols + c），或多层时用 board[layer] */
-  board: Int32Array;
+  /** 主棋盘：一维展开（idx = r * cols + c） */
+  board: number[];          // 用普通数组而不是 TypedArray：要在 Worker / DO / 浏览器之间 JSON 往返
   rows: number;
   cols: number;
   /** 轮到谁（单人游戏恒为 0） */
   turn: number;
-  /** 游戏私有的额外标量，如 2048 的 score、贪吃蛇的方向与蛇身队列 */
-  extra: Record<string, number | number[]>;
   status: 'playing' | 'won' | 'lost' | 'draw';
-  score: number;
+  score: number;            // 始终「越大越好」，排行榜才能统一处理
+  plies: number;
   /** 确定性随机的游标：每次消费随机数后自增，保证回放一致 */
   rngCursor: number;
+  /** 游戏私有数据。隐藏信息放在 `_` 开头的键里，view() 会剥掉 */
+  extra: Record<string, number | number[]>;
 }
 
 export interface GameDefinition<M = number> {
@@ -51,9 +52,20 @@ export interface GameDefinition<M = number> {
   /** 解析模型输出为走法，失败返回 null */
   parseMove(text: string, s: GameState): M | null;
 
-  /** 稳定哈希，用于校验与回放核对 */
-  hash(s: GameState): string;
+  /** 合法走法太多时（数独）用一段紧凑文本代替逐条列举 */
+  legalSummary?(s: GameState): string | null;
+  /** 前端渲染与输入映射的纯数据描述 */
+  ui: GameUi;
 }
+```
+
+状态哈希不放在每个游戏里，而是内核提供一个对所有游戏通用的 `hashState(s)`，
+少写 11 份重复代码，也保证哈希口径一致。
+
+`ui` 让**一份通用棋盘渲染器**覆盖全部 11 个游戏：每个游戏只声明
+「这个格子长什么样」「点它产生什么走法」「键盘怎么映射」，渲染器本身不认识任何具体游戏。
+其中 `autoTickMs` 用于贪吃蛇这类按固定节奏自动推进的游戏，服务端也读这个字段，
+据此跳过「操作节奏过于均匀」的反作弊判定（否则匀速 tick 会被误判为脚本）。
 ```
 
 ## 确定性随机

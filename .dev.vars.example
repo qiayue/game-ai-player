@@ -1,0 +1,10 @@
+# 复制成 .dev.vars 后填写（该文件不进版本库）
+SESSION_SECRET=换成一段足够长的随机字符串
+# 留空也能玩全部游戏，只是不能发起 AI 录制
+OPENROUTER_API_KEY=
+# 留空则登录按钮会提示未配置
+GOOGLE_CLIENT_ID=
+# 可选：把 OpenRouter 请求走 Cloudflare AI Gateway
+# AI_GATEWAY_URL=
+# 可选：管理员的 Google sub，逗号分隔
+# ADMIN_SUBS=

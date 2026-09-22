@@ -4,6 +4,6 @@ dist/
 *.tsbuildinfo
 .dev.vars
 .DS_Store
-apps/web/public/js/
-apps/web/public/*.html
-apps/web/public/games/
+apps/web/public/assets/
+apps/web/.entries/
+.shots/
