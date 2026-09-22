@@ -1,43 +1,82 @@
-# 07 · API 设计
+# 07 · API 与路由
 
-统一前缀 `/api`，JSON in / JSON out，错误体 `{ error: { code, message } }`。
+## 页面路由（输出 HTML，可被索引）
 
-## 游戏与对局
+| 路径 | 说明 |
+| --- | --- |
+| `/` | 首页：游戏列表 + 最新 AI 录像 + 总榜摘要 |
+| `/games/{gameId}` | 游戏页：玩法说明（SEO 正文）+ 排行榜 Top10 + 开始游戏按钮 |
+| `/games/{gameId}/leaderboard` | 完整排行榜（人类 / AI 两个 tab，SSR） |
+| `/games/{gameId}/ai` | 该游戏的 AI 录像列表 |
+| `/replay/{matchId}` | 回放页，HTML 里含该局的文字摘要 |
+| `/p/{handle}` | 玩家主页 |
+| `/models` `/models/{slug}` | 模型横评 / 单个模型的战绩页 |
+| `/sitemap.xml` `/sitemap-*.xml` | 动态生成 |
 
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/games` | 游戏列表（来自代码里的 registry，边缘缓存，不查库） |
-| `POST` | `/api/matches` | 开一局。body: `{ gameId, mode, seats: [{kind:'human'|'ai', modelKey?}], seed? }`，返回 `{ matchId, state, legalMoves }` |
-| `GET` | `/api/matches/:id` | 当前状态（进行中从 DO 读，已结束从 KV/R2 读） |
-| `POST` | `/api/matches/:id/moves` | 落子。body: `{ ply, move, clientStateHash }`，返回 `{ state, legalMoves, status }` |
-| `POST` | `/api/matches/:id/resign` | 认输 / 放弃 |
-| `GET` | `/api/matches/:id/stream` | WebSocket（DO 直连）：观战、AI 走子推送 |
+渲染方式见 [09-frontend-seo.md](09-frontend-seo.md)。
 
-`ply` 参数做幂等：重复提交同一 `ply` 返回同样结果，不会走两步（弱网重试必需）。
+## API（`/api` 前缀，JSON，错误体 `{ error: { code, message } }`）
 
-## 回放
-
-| 方法 | 路径 | 说明 |
-| --- | --- | --- |
-| `GET` | `/api/replays/:matchId` | 回放包 `{ gameId, seed, moves[], meta }`，走 R2 + Cache API，`immutable` |
-| `GET` | `/api/replays/:matchId/ai/:ply` | 该步的 AI prompt / 回复 / 用量 |
-
-前端拿到回放包后本地重放，服务端不参与逐帧计算。
-
-## 排行榜
+### 认证
 
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
-| `GET` | `/api/leaderboards/:gameId?track=ai&window=all&limit=100` | 读 KV 快照，miss 时读 `leaderboard_snapshot` |
-| `GET` | `/api/leaderboards/:gameId/me` | 我的最好成绩与名次（榜内精确，榜外给百分位） |
-| `GET` | `/api/players/:id/matches?cursor=` | **keyset 分页**，游标是上一页末条的 matchId |
+| `POST` | `/api/auth/google` | body `{ credential }`（Google ID token）→ 验签 → 下发 session Cookie |
+| `POST` | `/api/auth/logout` | 清 Cookie |
+| `GET` | `/api/me` | 当前用户（未登录返回 `{ user: null }`） |
+| `PATCH` | `/api/me` | 改显示名 / handle |
 
-排行榜接口一律不接受任意排序字段，只接受预先建好索引的几个固定组合，避免被构造成全表扫描。
+### 人类对局（整局只有 2 次请求）
 
-## 约定
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/matches` | `{ gameId }` → `{ matchId, seed, startedAt }`。服务端记录开局时间 |
+| `POST` | `/api/matches/{id}/finish` | `{ moves[], stepMs[], durationMs, finalHash }` → 服务端 replay 校验 → 入库 → `{ score, rank, replayUrl }` |
+| `POST` | `/api/matches/{id}/abandon` | 主动放弃，不上榜 |
+| `POST` | `/api/matches/claim` | 登录后认领匿名期间的对局（批量） |
+
+`finish` 是幂等的：同一 matchId 重复提交返回首次结果，不重复计分。
+
+### AI 录制
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/models?gameId=` | 可用模型列表 + 该游戏的预估成本 |
+| `POST` | `/api/ai-runs` | `{ gameId, modelKey }` → 校验配额与预算 → `{ runId }`（立即返回） |
+| `GET` | `/api/ai-runs/{id}` | 进度：`{ status, ply, score, board, lastThought, costUsd }`（前端每 2s 轮询） |
+| `POST` | `/api/ai-runs/{id}/abort` | 中止；已跑部分保存为未完成录像 |
+| `GET` | `/api/ai-runs?mine=1&cursor=` | 我发起过的录制任务 |
+
+轮询打的是 Durable Object 内存，不碰 D1。
+
+### 回放
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/replays/{matchId}` | `{ gameId, seed, moves[], meta }`，走 R2 + Cache API，`immutable` |
+| `GET` | `/api/replays/{matchId}/ai/{ply}` | 该步的 prompt / 回复 / 推理 / 用量 |
+
+### 排行榜与列表
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `GET` | `/api/leaderboards/{gameId}?track=ai&window=all&limit=100` | 读 KV 快照，miss 落 `leaderboard_snapshot` |
+| `GET` | `/api/leaderboards/{gameId}/me` | 我的最好成绩与名次（榜内精确，榜外给百分位） |
+| `GET` | `/api/players/{handle}/matches?cursor=` | **keyset 分页**，游标是上一页末条的 matchId |
+
+排行榜接口不接受任意排序字段，只接受预建索引的固定组合，避免被构造成全表扫描。
+
+### 管理
+
+| 方法 | 路径 | 说明 |
+| --- | --- | --- |
+| `POST` | `/api/admin/models/{key}` | 启用/停用模型、设置 `max_game_plies` / 锁定供应商 |
+| `POST` | `/api/admin/matches/{id}/flag` | 标记违规对局，移出排行榜 |
+| `POST` | `/api/admin/leaderboards/rebuild` | 重算指定榜 |
+
+## 全局约定
 
 - **所有列表接口用 cursor，不用 page/offset。**
-- 响应统一带 `Cache-Control`：排行榜 `max-age=30, stale-while-revalidate=300`；回放 `immutable`。
-- 写接口做速率限制（按 IP + 用户），用 KV 或 DO 计数器。
-- 认证：MVP 用匿名 + 本地 token（`players.kind='human'` 生成匿名玩家），
-  后续接 OAuth（GitHub / Google）把匿名成绩迁移到正式账号。
+- 响应统一带 `Cache-Control`：排行榜 `s-maxage=60, stale-while-revalidate=600`；回放 `immutable`。
+- 写接口校验 `Origin` 头（配合 `SameSite=Lax` Cookie 防 CSRF）；限流用 KV 计数器。
+- 单个请求的 D1 查询数 ≤ 4，多语句用 `db.batch()`。
